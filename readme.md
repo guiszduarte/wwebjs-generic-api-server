@@ -46,8 +46,8 @@ whatsapp-server/
 
 1. Clone ou baixe este repositório:
 ```bash
-git clone https://github.com/seu-repo/whatsapp-multicliente.git
-cd whatsapp-multicliente
+git clone https://github.com/guiszduarte/wwebjs-generic-api-client.git
+cd wwebjs-generic-api-client
 ```
 
 2. Instale dependências:
