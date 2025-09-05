@@ -1,0 +1,12 @@
+{
+  "name": "whatsapp-websocket-examples",
+  "version": "1.0.0",
+  "description": "Exemplos de cliente WebSocket para WhatsApp MultiCliente Server",
+  "scripts": {
+    "client": "node websocket-client-node.js",
+    "start": "node websocket-client-node.js"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.4"
+  }
+}
