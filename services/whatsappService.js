@@ -38,9 +38,13 @@ class WhatsAppService {
       const qrData = { qr, qrCodeDataURL, timestamp: new Date() };
       this.qrCodes.set(clientId, qrData);
       console.log(`📱 QR Code gerado para cliente: ${clientId}`);
+
+      this.clientStatus.set(clientId, 'qr'); 
       
       // Emitir QR Code via WebSocket
       this.getWebSocketService().emitQRCode(clientId, qrData);
+      // Emitir mudança de status via WebSocket
+      this.getWebSocketService().emitStatusChange(clientId, 'qr');
     });
 
     client.on('ready', () => { 
