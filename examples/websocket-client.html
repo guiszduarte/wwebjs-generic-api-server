@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp WebSocket Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .status.connected { background-color: #d4edda; color: #155724; }
+        .status.disconnected { background-color: #f8d7da; color: #721c24; }
+        .status.authenticated { background-color: #d1ecf1; color: #0c5460; }
+        
+        input, button, select {
+            padding: 8px 12px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .messages {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #fafafa;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-left: 4px solid #007bff;
+            background-color: white;
+            border-radius: 4px;
+        }
+        .message-header {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .message-body {
+            color: #666;
+        }
+        .message-meta {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+        .contact-info {
+            background-color: #e9ecef;
+            padding: 5px;
+            border-radius: 3px;
+            margin: 5px 0;
+        }
+        .group-message {
+            border-left-color: #28a745;
+        }
+        .media-message {
+            border-left-color: #ffc107;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 WhatsApp WebSocket Client</h1>
+    
+    <div class="container">
+        <h2>Conexão</h2>
+        <div id="connectionStatus" class="status disconnected">Desconectado</div>
+        
+        <div>
+            <input type="text" id="serverUrl" placeholder="ws://localhost:3000" value="ws://localhost:3000">
+            <input type="password" id="token" placeholder="Seu token de acesso">
+            <button id="connectBtn" onclick="connect()">Conectar</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Desconectar</button>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="container">
+            <h2>Clientes WhatsApp</h2>
+            <button onclick="listClients()" id="listClientsBtn" disabled>Listar Clientes</button>
+            <div id="clientsList"></div>
+            
+            <h3>Inscrever-se em Cliente</h3>
+            <input type="text" id="clientIdInput" placeholder="ID do cliente">
+            <button onclick="subscribe()" id="subscribeBtn" disabled>Inscrever</button>
+            <button onclick="unsubscribe()" id="unsubscribeBtn" disabled>Cancelar Inscrição</button>
+            
+            <div id="subscriptions"></div>
+        </div>
+
+        <div class="container">
+            <h2>Eventos em Tempo Real</h2>
+            <button onclick="clearEvents()">Limpar Eventos</button>
+            <div id="events" class="messages"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📨 Mensagens Recebidas</h2>
+        <button onclick="clearMessages()">Limpar Mensagens</button>
+        <div id="messages" class="messages"></div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <script>
+        let socket = null;
+        let isAuthenticated = false;
+        let subscribedClients = [];
+
+        function updateConnectionStatus(status, message) {
+            const statusEl = document.getElementById('connectionStatus');
+            statusEl.className = `status ${status}`;
+            statusEl.textContent = message;
+        }
+
+        function addEvent(type, data) {
+            const eventsEl = document.getElementById('events');
+            const eventEl = document.createElement('div');
+            eventEl.className = 'message';
+            eventEl.innerHTML = `
+                <div class="message-header">${type}</div>
+                <div class="message-body">${JSON.stringify(data, null, 2)}</div>
+                <div class="message-meta">${new Date().toLocaleString()}</div>
+            `;
+            eventsEl.insertBefore(eventEl, eventsEl.firstChild);
+        }
+
+        function addMessage(messageData) {
+            const messagesEl = document.getElementById('messages');
+            const messageEl = document.createElement('div');
+            
+            const isGroup = messageData.message.isGroup;
+            const hasMedia = messageData.message.hasMedia;
+            
+            let className = 'message';
+            if (isGroup) className += ' group-message';
+            if (hasMedia) className += ' media-message';
+            
+            messageEl.className = className;
+            
+            const contactInfo = messageData.message.contact;
+            const chatInfo = messageData.message.chat;
+            
+            messageEl.innerHTML = `
+                <div class="message-header">
+                    ${isGroup ? '👥 ' : '👤 '}${contactInfo.name || contactInfo.number}
+                    ${isGroup ? ` (${chatInfo?.name || 'Grupo'})` : ''}
+                    ${hasMedia ? ' 📎' : ''}
+                </div>
+                <div class="contact-info">
+                    <strong>Número:</strong> ${contactInfo.number}<br>
+                    <strong>ID:</strong> ${contactInfo.id}<br>
+                    ${contactInfo.isMyContact ? '<span style="color: green;">✓ Contato salvo</span>' : '<span style="color: orange;">⚠ Não é contato</span>'}
+                </div>
+                <div class="message-body">${messageData.message.body || '[Mensagem sem texto]'}</div>
+                ${messageData.message.location ? `
+                    <div class="contact-info">
+                        📍 <strong>Localização:</strong> ${messageData.message.location.latitude}, ${messageData.message.location.longitude}
+                        ${messageData.message.location.description ? `<br>${messageData.message.location.description}` : ''}
+                    </div>
+                ` : ''}
+                ${messageData.message.quotedMsg ? `
+                    <div class="contact-info">
+                        💬 <strong>Respondendo a:</strong> ${messageData.message.quotedMsg.body}
+                    </div>
+                ` : ''}
+                <div class="message-meta">
+                    Cliente: ${messageData.clientId} | 
+                    Tipo: ${messageData.message.type} | 
+                    ${new Date(messageData.message.timestamp).toLocaleString()}
+                </div>
+            `;
+            
+            messagesEl.insertBefore(messageEl, messagesEl.firstChild);
+        }
+
+        function connect() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const token = document.getElementById('token').value;
+
+            if (!token) {
+                alert('Por favor, insira o token de acesso');
+                return;
+            }
+
+            socket = io(serverUrl);
+
+            socket.on('connect', () => {
+                updateConnectionStatus('connected', 'Conectado - Autenticando...');
+                addEvent('CONECTADO', { socketId: socket.id });
+                
+                // Autenticar
+                socket.emit('authenticate', { token });
+            });
+
+            socket.on('authenticated', (data) => {
+                isAuthenticated = true;
+                updateConnectionStatus('authenticated', 'Conectado e Autenticado');
+                addEvent('AUTENTICADO', data);
+                
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+                document.getElementById('listClientsBtn').disabled = false;
+                document.getElementById('subscribeBtn').disabled = false;
+                document.getElementById('unsubscribeBtn').disabled = false;
+                
+                // Listar clientes automaticamente
+                listClients();
+            });
+
+            socket.on('authentication_error', (data) => {
+                updateConnectionStatus('disconnected', 'Erro de Autenticação');
+                addEvent('ERRO_AUTENTICAÇÃO', data);
+                alert('Erro de autenticação: ' + data.message);
+            });
+
+            socket.on('clients_list', (data) => {
+                addEvent('LISTA_CLIENTES', data);
+                displayClientsList(data.clients);
+            });
+
+            socket.on('subscribed', (data) => {
+                addEvent('INSCRITO', data);
+                if (!subscribedClients.includes(data.clientId)) {
+                    subscribedClients.push(data.clientId);
+                }
+                updateSubscriptions();
+            });
+
+            socket.on('unsubscribed', (data) => {
+                addEvent('CANCELOU_INSCRIÇÃO', data);
+                const index = subscribedClients.indexOf(data.clientId);
+                if (index > -1) {
+                    subscribedClients.splice(index, 1);
+                }
+                updateSubscriptions();
+            });
+
+            socket.on('new_message', (data) => {
+                addEvent('NOVA_MENSAGEM', { clientId: data.clientId, from: data.message.contact.name });
+                addMessage(data);
+            });
+
+            socket.on('client_status_change', (data) => {
+                addEvent('MUDANÇA_STATUS', data);
+            });
+
+            socket.on('qr_code', (data) => {
+                addEvent('QR_CODE', { clientId: data.clientId, timestamp: data.timestamp });
+            });
+
+            socket.on('disconnect', () => {
+                updateConnectionStatus('disconnected', 'Desconectado');
+                addEvent('DESCONECTADO', {});
+                resetUI();
+            });
+
+            socket.on('subscription_error', (data) => {
+                addEvent('ERRO_INSCRIÇÃO', data);
+                alert('Erro na inscrição: ' + data.message);
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                resetUI();
+            }
+        }
+
+        function resetUI() {
+            isAuthenticated = false;
+            subscribedClients = [];
+            
+            document.getElementById('connectBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = true;
+            document.getElementById('listClientsBtn').disabled = true;
+            document.getElementById('subscribeBtn').disabled = true;
+            document.getElementById('unsubscribeBtn').disabled = true;
+            
+            updateSubscriptions();
+        }
+
+        function listClients() {
+            if (socket && isAuthenticated) {
+                socket.emit('list_clients');
+            }
+        }
+
+        function subscribe() {
+            const clientId = document.getElementById('clientIdInput').value;
+            if (!clientId) {
+                alert('Por favor, insira o ID do cliente');
+                return;
+            }
+            
+            if (socket && isAuthenticated) {
+                socket.emit('subscribe', { clientId });
+            }
+        }
+
+        function unsubscribe() {
+            const clientId = document.getElementById('clientIdInput').value;
+            if (!clientId) {
+                alert('Por favor, insira o ID do cliente');
+                return;
+            }
+            
+            if (socket && isAuthenticated) {
+                socket.emit('unsubscribe', { clientId });
+            }
+        }
+
+        function displayClientsList(clients) {
+            const clientsListEl = document.getElementById('clientsList');
+            clientsListEl.innerHTML = '<h4>Clientes Disponíveis:</h4>';
+            
+            clients.forEach(client => {
+                const clientEl = document.createElement('div');
+                clientEl.className = 'contact-info';
+                clientEl.innerHTML = `
+                    <strong>${client.clientId}</strong> - 
+                    Status: ${client.status} - 
+                    Mensagens: ${client.messageCount}
+                    ${client.hasQR ? ' (QR disponível)' : ''}
+                `;
+                clientsListEl.appendChild(clientEl);
+            });
+        }
+
+        function updateSubscriptions() {
+            const subscriptionsEl = document.getElementById('subscriptions');
+            subscriptionsEl.innerHTML = '<h4>Inscrições Ativas:</h4>';
+            
+            if (subscribedClients.length === 0) {
+                subscriptionsEl.innerHTML += '<p>Nenhuma inscrição ativa</p>';
+                return;
+            }
+            
+            subscribedClients.forEach(clientId => {
+                const subEl = document.createElement('div');
+                subEl.className = 'contact-info';
+                subEl.innerHTML = `✅ ${clientId}`;
+                subscriptionsEl.appendChild(subEl);
+            });
+        }
+
+        function clearEvents() {
+            document.getElementById('events').innerHTML = '';
+        }
+
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '';
+        }
+    </script>
+</body>
+</html>
