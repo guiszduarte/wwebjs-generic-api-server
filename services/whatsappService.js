@@ -120,21 +120,21 @@ class WhatsAppService {
 
       // Obter informações do chat se for grupo
       let chatInfo = {};
-      if (msg.from.includes('@g.us')) {
-        try {
-          const chat = await msg.getChat();
-          chatInfo = {
-            id: chat.id._serialized,
-            name: chat.name,
-            isGroup: chat.isGroup,
-            participantsCount: chat.participants ? chat.participants.length : 0,
-            description: chat.description || null,
-            createdAt: chat.createdAt ? new Date(chat.createdAt * 1000) : null
-          };
-        } catch (error) {
-          console.warn(`Erro ao obter informações do chat: ${error.message}`);
-        }
-      }
+      // if (msg.from.includes('@g.us')) {
+      //   try {
+      //     const chat = await msg.getChat();
+      //     chatInfo = {
+      //       id: chat.id._serialized,
+      //       name: chat.name,
+      //       isGroup: chat.isGroup,
+      //       participantsCount: chat.participants ? chat.participants.length : 0,
+      //       description: chat.description || null,
+      //       createdAt: chat.createdAt ? new Date(chat.createdAt * 1000) : null
+      //     };
+      //   } catch (error) {
+      //     console.warn(`Erro ao obter informações do chat: ${error.message}`);
+      //   }
+      // }
       
       // Armazenar mensagem recebida com informações completas
       const messageData = {
