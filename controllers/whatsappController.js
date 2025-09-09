@@ -1,12 +1,10 @@
 const whatsappService = require('../services/whatsappService');
 const tokenService = require('../services/tokenService');
 
-class WhatsAppController {
-
   /**
    * Verifica se o token tem permissão para acessar o clientId especificado
    */
-  _checkPermission(req, targetClientId) {
+  const _checkPermission = (req, targetClientId) => {
     const requestingClientId = req.clientId;
     
     if (!tokenService.hasPermission(requestingClientId, targetClientId)) {
@@ -14,13 +12,15 @@ class WhatsAppController {
     }
   }
 
+class WhatsAppController {
+
   async createClient(req, res) {
     try {
       const { clientId } = req.body;
       if (!clientId) return res.status(400).json({ error: 'clientId é obrigatório' });
-      
+
       // Verifica permissão
-      this._checkPermission(req, clientId);
+      _checkPermission(req, clientId);
       
       const result = await whatsappService.createClient(clientId);
       res.json(result);
@@ -37,7 +37,7 @@ class WhatsAppController {
       const { clientId } = req.params;
       
       // Verifica permissão
-      this._checkPermission(req, clientId);
+      _checkPermission(req, clientId);
       
       const qrData = whatsappService.getQRCode(clientId);
       res.json({
@@ -58,7 +58,7 @@ class WhatsAppController {
       const { clientId } = req.params;
       
       // Verifica permissão
-      this._checkPermission(req, clientId);
+      _checkPermission(req, clientId);
       
       const status = whatsappService.getStatus(clientId);
       res.json(status);
@@ -79,7 +79,7 @@ class WhatsAppController {
       }
       
       // Verifica permissão
-      this._checkPermission(req, clientId);
+      _checkPermission(req, clientId);
       
       const result = await whatsappService.sendMessage(clientId, number, message);
       res.json(result);
@@ -96,7 +96,7 @@ class WhatsAppController {
       const { clientId } = req.params;
       
       // Verifica permissão
-      this._checkPermission(req, clientId);
+      _checkPermission(req, clientId);
       
       const result = await whatsappService.removeClient(clientId);
       res.json(result);
@@ -132,7 +132,7 @@ class WhatsAppController {
       const { clientId } = req.params;
       
       // Verifica permissão
-      this._checkPermission(req, clientId);
+      _checkPermission(req, clientId);
       
       const options = {};
 
@@ -160,7 +160,7 @@ class WhatsAppController {
       const { clientId } = req.params;
       
       // Verifica permissão
-      this._checkPermission(req, clientId);
+      _checkPermission(req, clientId);
       
       const stats = whatsappService.getMessageStats(clientId);
       res.json(stats);
@@ -177,7 +177,7 @@ class WhatsAppController {
       const { clientId } = req.params;
       
       // Verifica permissão
-      this._checkPermission(req, clientId);
+      _checkPermission(req, clientId);
       
       const result = whatsappService.clearMessages(clientId);
       res.json(result);
@@ -195,7 +195,7 @@ class WhatsAppController {
       const limit = parseInt(req.query.limit) || 10;
       
       // Verifica permissão
-      this._checkPermission(req, clientId);
+      _checkPermission(req, clientId);
       
       const result = whatsappService.getMessages(clientId, { 
         limit,
@@ -225,7 +225,7 @@ class WhatsAppController {
       }
 
       // Verifica permissão
-      this._checkPermission(req, clientId);
+      _checkPermission(req, clientId);
 
       const options = {
         limit: parseInt(req.query.limit) || 50
