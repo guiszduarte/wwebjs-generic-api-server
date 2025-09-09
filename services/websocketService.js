@@ -3,15 +3,17 @@
  * Gerencia conexões, autenticação e eventos de mensagens
  */
 
+const tokenService = require('./tokenService');
+
 class WebSocketService {
   constructor() {
     this.io = null;
-    this.authenticatedClients = new Map(); // Map de socket.id -> { clientIds: [], token: '' }
+    this.authenticatedClients = new Map(); // Map de socket.id -> { clientIds: [], tokenData: {} }
   }
 
   initialize(server) {
     const { Server } = require('socket.io');
-    
+
     this.io = new Server(server, {
       cors: {
         origin: "*", // Em produção, configure origins específicas
@@ -54,40 +56,60 @@ class WebSocketService {
 
   handleAuthentication(socket, data) {
     const { token } = data;
-    const validToken = process.env.ACCESS_TOKEN;
+    const masterToken = process.env.ACCESS_TOKEN;
 
-    // Verificar token
-    if (!validToken) {
+    // Verificar se não há token master configurado (modo desenvolvimento)
+    if (!masterToken) {
       console.warn('⚠️  ACCESS_TOKEN não configurado - permitindo conexão');
-      this.authenticatedClients.set(socket.id, { clientIds: [], token: null });
+      this.authenticatedClients.set(socket.id, {
+        clientIds: [],
+        tokenData: { clientId: '*', isMaster: true, isValid: true }
+      });
       socket.emit('authenticated', { success: true, message: 'Autenticado (modo desenvolvimento)' });
       return;
     }
 
-    if (!token || token !== validToken) {
-      socket.emit('authentication_error', { 
+    if (!token) {
+      socket.emit('authentication_error', {
         error: 'Token inválido ou não fornecido',
         message: 'Forneça um token válido para autenticação'
       });
       return;
     }
 
+    // Valida o token usando o serviço de tokens
+    const tokenValidation = tokenService.validateToken(token);
+
+    if (!tokenValidation || !tokenValidation.isValid) {
+      socket.emit('authentication_error', {
+        error: 'Token inválido ou expirado',
+        message: 'O token fornecido não é válido ou expirou'
+      });
+      return;
+    }
+
     // Token válido
-    this.authenticatedClients.set(socket.id, { clientIds: [], token });
-    socket.emit('authenticated', { 
-      success: true, 
-      message: 'Autenticado com sucesso',
-      socketId: socket.id
+    this.authenticatedClients.set(socket.id, {
+      clientIds: [],
+      tokenData: tokenValidation
     });
 
-    console.log(`🔐 Cliente ${socket.id} autenticado via WebSocket`);
+    socket.emit('authenticated', {
+      success: true,
+      message: 'Autenticado com sucesso',
+      socketId: socket.id,
+      clientId: tokenValidation.clientId,
+      isMaster: tokenValidation.isMaster
+    });
+
+    console.log(`🔐 Cliente ${socket.id} autenticado via WebSocket (clientId: ${tokenValidation.clientId})`);
   }
 
   handleSubscription(socket, data) {
     const clientData = this.authenticatedClients.get(socket.id);
-    
+
     if (!clientData) {
-      socket.emit('subscription_error', { 
+      socket.emit('subscription_error', {
         error: 'Não autenticado',
         message: 'Faça a autenticação antes de se inscrever'
       });
@@ -96,34 +118,38 @@ class WebSocketService {
 
     const { clientId } = data;
     if (!clientId) {
-      socket.emit('subscription_error', { 
+      socket.emit('subscription_error', {
         error: 'clientId obrigatório',
         message: 'Forneça o ID do cliente WhatsApp'
       });
       return;
     }
 
-    // Verificar se o cliente WhatsApp existe
-    const whatsappService = require('./whatsappService');
+    // Verifica se o token tem permissão para acessar este clientId
+    if (!tokenService.hasPermission(clientData.tokenData.clientId, clientId)) {
+      socket.emit('subscription_error', {
+        error: 'Acesso negado',
+        message: `Token não tem permissão para acessar o cliente ${clientId}`
+      });
+      return;
+    }
+
     try {
-      const status = whatsappService.getStatus(clientId);
-      
-      // Adicionar à lista de clientes inscritos
+      // Adiciona o clientId à lista de inscrições se não estiver já inscrito
       if (!clientData.clientIds.includes(clientId)) {
         clientData.clientIds.push(clientId);
         this.authenticatedClients.set(socket.id, clientData);
       }
 
-      socket.emit('subscribed', { 
+      socket.emit('subscribed', {
         success: true,
         clientId,
-        status: status.status,
         message: `Inscrito no cliente ${clientId}`
       });
 
       console.log(`📱 Cliente ${socket.id} inscrito no WhatsApp cliente: ${clientId}`);
     } catch (error) {
-      socket.emit('subscription_error', { 
+      socket.emit('subscription_error', {
         error: error.message,
         clientId
       });
@@ -132,19 +158,19 @@ class WebSocketService {
 
   handleUnsubscription(socket, data) {
     const clientData = this.authenticatedClients.get(socket.id);
-    
+
     if (!clientData) {
       return;
     }
 
     const { clientId } = data;
     const index = clientData.clientIds.indexOf(clientId);
-    
+
     if (index > -1) {
       clientData.clientIds.splice(index, 1);
       this.authenticatedClients.set(socket.id, clientData);
-      
-      socket.emit('unsubscribed', { 
+
+      socket.emit('unsubscribed', {
         success: true,
         clientId,
         message: `Cancelada inscrição do cliente ${clientId}`
@@ -156,9 +182,9 @@ class WebSocketService {
 
   handleListClients(socket) {
     const clientData = this.authenticatedClients.get(socket.id);
-    
+
     if (!clientData) {
-      socket.emit('list_clients_error', { 
+      socket.emit('clients_list_error', {
         error: 'Não autenticado'
       });
       return;
@@ -166,14 +192,22 @@ class WebSocketService {
 
     try {
       const whatsappService = require('./whatsappService');
-      const clients = whatsappService.listClients();
-      
+      const allClients = whatsappService.listClients();
+
+      // Se não é master, filtra apenas os clientes que o token pode acessar
+      let clients = allClients;
+      if (!clientData.tokenData.isMaster) {
+        clients = allClients.filter(client =>
+          tokenService.hasPermission(clientData.tokenData.clientId, client.clientId)
+        );
+      }
+
       socket.emit('clients_list', {
         clients,
         subscribedTo: clientData.clientIds
       });
     } catch (error) {
-      socket.emit('list_clients_error', { 
+      socket.emit('clients_list_error', {
         error: error.message
       });
     }
@@ -245,7 +279,7 @@ class WebSocketService {
     const totalConnections = this.authenticatedClients.size;
     const authenticatedConnections = Array.from(this.authenticatedClients.values())
       .filter(client => client.token !== null).length;
-    
+
     const subscriptions = {};
     for (const clientData of this.authenticatedClients.values()) {
       for (const clientId of clientData.clientIds) {

@@ -1,18 +1,22 @@
 /**
  * Middleware de autenticação por token
- * Verifica se o token fornecido é válido
+ * Verifica se o token fornecido é válido (master ou específico de cliente)
  */
+
+const tokenService = require('../services/tokenService');
 
 const authMiddleware = (req, res, next) => {
   // Obtém o token da query string ou do header Authorization
   const token = req.query.token || req.headers.authorization?.replace('Bearer ', '');
   
-  // Token definido nas variáveis de ambiente
-  const validToken = process.env.ACCESS_TOKEN;
+  // Token master definido nas variáveis de ambiente
+  const masterToken = process.env.ACCESS_TOKEN;
   
-  // Se não há token configurado, permite acesso (para desenvolvimento)
-  if (!validToken) {
+  // Se não há token master configurado, permite acesso (para desenvolvimento)
+  if (!masterToken) {
     console.warn('⚠️  AVISO: ACCESS_TOKEN não configurado. Acesso liberado para desenvolvimento.');
+    req.clientId = '*'; // Acesso total em modo desenvolvimento
+    req.isMaster = true;
     return next();
   }
   
@@ -24,13 +28,20 @@ const authMiddleware = (req, res, next) => {
     });
   }
   
-  // Verifica se o token é válido
-  if (token !== validToken) {
+  // Valida o token usando o serviço de tokens
+  const tokenValidation = tokenService.validateToken(token);
+  
+  if (!tokenValidation || !tokenValidation.isValid) {
     return res.status(403).json({
       error: 'Token inválido',
-      message: 'O token fornecido não é válido'
+      message: 'O token fornecido não é válido ou expirou'
     });
   }
+
+  // Adiciona informações do token à requisição
+  req.clientId = tokenValidation.clientId;
+  req.isMaster = tokenValidation.isMaster;
+  req.tokenData = tokenValidation;
   
   // Token válido, continua para a próxima função
   next();

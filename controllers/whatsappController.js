@@ -1,13 +1,33 @@
 const whatsappService = require('../services/whatsappService');
+const tokenService = require('../services/tokenService');
 
 class WhatsAppController {
+
+  /**
+   * Verifica se o token tem permissão para acessar o clientId especificado
+   */
+  _checkPermission(req, targetClientId) {
+    const requestingClientId = req.clientId;
+    
+    if (!tokenService.hasPermission(requestingClientId, targetClientId)) {
+      throw new Error(`Acesso negado: token não tem permissão para acessar o cliente ${targetClientId}`);
+    }
+  }
+
   async createClient(req, res) {
     try {
       const { clientId } = req.body;
       if (!clientId) return res.status(400).json({ error: 'clientId é obrigatório' });
+      
+      // Verifica permissão
+      this._checkPermission(req, clientId);
+      
       const result = await whatsappService.createClient(clientId);
       res.json(result);
     } catch (error) {
+      if (error.message.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(400).json({ error: error.message });
     }
   }
@@ -15,6 +35,10 @@ class WhatsAppController {
   async getQRCode(req, res) {
     try {
       const { clientId } = req.params;
+      
+      // Verifica permissão
+      this._checkPermission(req, clientId);
+      
       const qrData = whatsappService.getQRCode(clientId);
       res.json({
         clientId,
@@ -22,6 +46,9 @@ class WhatsAppController {
         timestamp: qrData.timestamp
       });
     } catch (error) {
+      if (error.message.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(404).json({ error: error.message });
     }
   }
@@ -29,9 +56,16 @@ class WhatsAppController {
   async getStatus(req, res) {
     try {
       const { clientId } = req.params;
+      
+      // Verifica permissão
+      this._checkPermission(req, clientId);
+      
       const status = whatsappService.getStatus(clientId);
       res.json(status);
     } catch (error) {
+      if (error.message.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(404).json({ error: error.message });
     }
   }
@@ -43,9 +77,16 @@ class WhatsAppController {
       if (!number || !message) {
         return res.status(400).json({ error: 'number e message são obrigatórios' });
       }
+      
+      // Verifica permissão
+      this._checkPermission(req, clientId);
+      
       const result = await whatsappService.sendMessage(clientId, number, message);
       res.json(result);
     } catch (error) {
+      if (error.message.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(400).json({ error: error.message });
     }
   }
@@ -53,17 +94,33 @@ class WhatsAppController {
   async removeClient(req, res) {
     try {
       const { clientId } = req.params;
+      
+      // Verifica permissão
+      this._checkPermission(req, clientId);
+      
       const result = await whatsappService.removeClient(clientId);
       res.json(result);
     } catch (error) {
+      if (error.message.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(404).json({ error: error.message });
     }
   }
 
   async listClients(req, res) {
     try {
-      const clients = whatsappService.listClients();
-      res.json({ clients });
+      const allClients = whatsappService.listClients();
+      
+      // Se não é master, filtra apenas os clientes que o token pode acessar
+      if (!req.isMaster) {
+        const allowedClients = allClients.filter(client => 
+          tokenService.hasPermission(req.clientId, client.clientId)
+        );
+        return res.json({ clients: allowedClients });
+      }
+      
+      res.json({ clients: allClients });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -73,6 +130,10 @@ class WhatsAppController {
   async getMessages(req, res) {
     try {
       const { clientId } = req.params;
+      
+      // Verifica permissão
+      this._checkPermission(req, clientId);
+      
       const options = {};
 
       // Parâmetros de filtro opcionais
@@ -87,6 +148,9 @@ class WhatsAppController {
       const result = whatsappService.getMessages(clientId, options);
       res.json(result);
     } catch (error) {
+      if (error.message.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(404).json({ error: error.message });
     }
   }
@@ -94,9 +158,16 @@ class WhatsAppController {
   async getMessageStats(req, res) {
     try {
       const { clientId } = req.params;
+      
+      // Verifica permissão
+      this._checkPermission(req, clientId);
+      
       const stats = whatsappService.getMessageStats(clientId);
       res.json(stats);
     } catch (error) {
+      if (error.message.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(404).json({ error: error.message });
     }
   }
@@ -104,9 +175,16 @@ class WhatsAppController {
   async clearMessages(req, res) {
     try {
       const { clientId } = req.params;
+      
+      // Verifica permissão
+      this._checkPermission(req, clientId);
+      
       const result = whatsappService.clearMessages(clientId);
       res.json(result);
     } catch (error) {
+      if (error.message.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(404).json({ error: error.message });
     }
   }
@@ -115,6 +193,9 @@ class WhatsAppController {
     try {
       const { clientId } = req.params;
       const limit = parseInt(req.query.limit) || 10;
+      
+      // Verifica permissão
+      this._checkPermission(req, clientId);
       
       const result = whatsappService.getMessages(clientId, { 
         limit,
@@ -127,6 +208,9 @@ class WhatsAppController {
         messages: result.messages
       });
     } catch (error) {
+      if (error.message.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(404).json({ error: error.message });
     }
   }
@@ -139,6 +223,9 @@ class WhatsAppController {
       if (!query) {
         return res.status(400).json({ error: 'Parâmetro query é obrigatório para busca' });
       }
+
+      // Verifica permissão
+      this._checkPermission(req, clientId);
 
       const options = {
         limit: parseInt(req.query.limit) || 50
@@ -162,6 +249,9 @@ class WhatsAppController {
         messages: filteredMessages
       });
     } catch (error) {
+      if (error.message.includes('Acesso negado')) {
+        return res.status(403).json({ error: error.message });
+      }
       res.status(404).json({ error: error.message });
     }
   }

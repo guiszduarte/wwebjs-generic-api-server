@@ -6,15 +6,18 @@ Servidor Node.js que utiliza **whatsapp-web.js** para controlar múltiplas sess�
 
 ## 🚀 Funcionalidades
 - Suporte a **múltiplos clientes** (sessões independentes).
+- **Sistema de tokens específicos por cliente** para controle granular de acesso.
 - **Persistência de sessão** (não precisa reescanear o QR a cada execução).
 - **API REST** para criar cliente, verificar status, obter QR Code, enviar mensagens e remover clientes.
 - **Sistema completo de mensagens recebidas** com armazenamento, busca e filtros.
-- **Autenticação por token** para maior segurança.
+- **Autenticação por token** com suporte a tokens master e específicos por cliente.
+- **WebSocket em tempo real** com controle de permissões por token.
 - Suporte a QR Code em **Base64** (pronto para exibir em frontend).
 - **Armazenamento automático** de mensagens recebidas (texto e mídia).
 - **Filtros avançados** por remetente, data, tipo e grupos/contatos.
 - **Busca de mensagens** por conteúdo e remetente.
 - **Estatísticas detalhadas** de mensagens por cliente.
+- **Gerenciamento completo de tokens** (geração, validação, revogação).
 - Encerramento **graceful** (encerra todos os clientes ao parar o servidor).
 
 ---

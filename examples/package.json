@@ -4,9 +4,11 @@
   "description": "Exemplos de cliente WebSocket para WhatsApp MultiCliente Server",
   "scripts": {
     "client": "node websocket-client-node.js",
+    "tokens": "node token-system-example.js",
     "start": "node websocket-client-node.js"
   },
   "dependencies": {
-    "socket.io-client": "^4.7.4"
+    "socket.io-client": "^4.7.4",
+    "axios": "^1.6.0"
   }
 }

@@ -3,6 +3,7 @@ const cors = require('cors');
 const http = require('http');
 require('dotenv').config(); // Carrega variáveis de ambiente
 const whatsappController = require('./controllers/whatsappController');
+const tokenController = require('./controllers/tokenController');
 const authMiddleware = require('./middleware/auth');
 const websocketService = require('./services/websocketService');
 
@@ -19,8 +20,8 @@ websocketService.initialize(server);
 // Rota pública para verificar se o servidor está rodando
 app.get('/', (req, res) => {
   const wsStats = websocketService.getConnectionStats();
-  
-  res.json({ 
+
+  res.json({
     message: 'Servidor WhatsApp MultiCliente rodando!',
     version: '1.3.0',
     authentication: 'Token obrigatório para acessar as rotas da API',
@@ -31,6 +32,13 @@ app.get('/', (req, res) => {
       authenticated: wsStats.authenticatedConnections
     },
     endpoints: {
+      // Endpoints de gerenciamento de tokens
+      'POST /api/tokens/generate?token=MASTER_TOKEN': 'Gerar token para cliente específico',
+      'POST /api/tokens/validate?token=SEU_TOKEN': 'Validar um token',
+      'DELETE /api/tokens/revoke/:clientId?token=MASTER_TOKEN': 'Revogar token de cliente',
+      'GET /api/tokens/list?token=MASTER_TOKEN': 'Listar tokens ativos',
+      'GET /api/tokens/info?token=SEU_TOKEN': 'Informações do token atual',
+
       // Endpoints de cliente
       'POST /client/create?token=SEU_TOKEN': 'Criar novo cliente',
       'GET /client/:clientId/qr?token=SEU_TOKEN': 'Obter QR Code',
@@ -38,7 +46,7 @@ app.get('/', (req, res) => {
       'POST /client/:clientId/send?token=SEU_TOKEN': 'Enviar mensagem',
       'DELETE /client/:clientId?token=SEU_TOKEN': 'Remover cliente',
       'GET /clients?token=SEU_TOKEN': 'Listar todos os clientes',
-      
+
       // Endpoints de mensagens
       'GET /client/:clientId/messages?token=SEU_TOKEN': 'Listar mensagens recebidas',
       'GET /client/:clientId/messages/latest?token=SEU_TOKEN': 'Últimas mensagens',
@@ -58,6 +66,13 @@ app.get('/', (req, res) => {
     note: 'Substitua SEU_TOKEN pelo token configurado na variável ACCESS_TOKEN'
   });
 });
+
+// Rotas de gerenciamento de tokens
+app.post('/api/tokens/generate', authMiddleware, tokenController.generateToken);
+app.post('/api/tokens/validate', authMiddleware, tokenController.validateToken);
+app.delete('/api/tokens/revoke/:clientId', authMiddleware, tokenController.revokeToken);
+app.get('/api/tokens/list', authMiddleware, tokenController.listTokens);
+app.get('/api/tokens/info', authMiddleware, tokenController.getTokenInfo);
 
 // Rotas de cliente (existentes)
 app.post('/client/create', authMiddleware, whatsappController.createClient);
@@ -83,7 +98,7 @@ app.get('/websocket/stats', authMiddleware, (req, res) => {
 server.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
   console.log(`🌐 WebSocket disponível em: ws://localhost:${PORT}`);
-  
+
   // Aviso sobre configuração do token
   if (!process.env.ACCESS_TOKEN) {
     console.warn('⚠️  AVISO: ACCESS_TOKEN não configurado!');
@@ -92,7 +107,7 @@ server.listen(PORT, () => {
   } else {
     console.log('🔒 Autenticação por token ativada');
   }
-  
+
   console.log('📨 Sistema de mensagens recebidas ativo');
   console.log('🔌 WebSocket em tempo real ativo');
 });
