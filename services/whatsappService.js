@@ -283,6 +283,11 @@ class WhatsAppService {
   }
 
   async findGroupByName(clientId, groupName) {
+
+    if (!groupName) {
+      return res.status(400).json({ error: "Nome do grupo não informado" });
+    }
+
     const groups = await this.getGroups(clientId);
     const foundGroups = groups.filter(group =>
       group.name.toLowerCase().includes(groupName.toLowerCase())
