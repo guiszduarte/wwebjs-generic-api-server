@@ -39,50 +39,50 @@ class WhatsAppService {
       this.qrCodes.set(clientId, qrData);
       console.log(`📱 QR Code gerado para cliente: ${clientId}`);
 
-      this.clientStatus.set(clientId, 'qr_generated'); 
-      
+      this.clientStatus.set(clientId, 'qr_generated');
+
       // Emitir QR Code via WebSocket
       this.getWebSocketService().emitQRCode(clientId, qrData);
       // Emitir mudança de status via WebSocket
       this.getWebSocketService().emitStatusChange(clientId, 'qr_generated');
     });
 
-    client.on('ready', () => { 
-      this.clientStatus.set(clientId, 'ready'); 
+    client.on('ready', () => {
+      this.clientStatus.set(clientId, 'ready');
       this.qrCodes.delete(clientId);
       console.log(`✅ Cliente ${clientId} pronto!`);
-      
+
       // Emitir mudança de status via WebSocket
       this.getWebSocketService().emitStatusChange(clientId, 'ready');
     });
 
-    client.on('authenticated', () => { 
+    client.on('authenticated', () => {
       this.clientStatus.set(clientId, 'authenticated');
       console.log(`🔐 Cliente ${clientId} autenticado`);
-      
+
       // Emitir mudança de status via WebSocket
       this.getWebSocketService().emitStatusChange(clientId, 'authenticated');
     });
 
-    client.on('auth_failure', () => { 
+    client.on('auth_failure', () => {
       this.clientStatus.set(clientId, 'auth_failure');
       console.log(`❌ Falha na autenticação do cliente ${clientId}`);
-      
+
       // Emitir mudança de status via WebSocket
       this.getWebSocketService().emitStatusChange(clientId, 'auth_failure');
     });
 
-    client.on('disconnected', () => { 
+    client.on('disconnected', () => {
       this.clientStatus.set(clientId, 'disconnected');
       console.log(`🔌 Cliente ${clientId} desconectado`);
-      
+
       // Emitir mudança de status via WebSocket
       this.getWebSocketService().emitStatusChange(clientId, 'disconnected');
     });
 
     client.on('message', async (msg) => {
       console.log(`📨 [${clientId}] ${msg.from}: ${msg.body}`);
-      
+
       // Obter informações detalhadas do contato
       let contactInfo = {};
       try {
@@ -135,7 +135,7 @@ class WhatsAppService {
           console.warn(`Erro ao obter informações do chat: ${error.message}`);
         }
       }
-      
+
       // Armazenar mensagem recebida com informações completas
       const messageData = {
         id: msg.id._serialized,
@@ -147,13 +147,13 @@ class WhatsAppService {
         isGroup: msg.from.includes('@g.us'),
         hasMedia: msg.hasMedia,
         receivedAt: new Date(),
-        
+
         // Informações detalhadas do contato
         contact: contactInfo,
-        
+
         // Informações do chat (se for grupo)
         chat: msg.from.includes('@g.us') ? chatInfo : null,
-        
+
         // Informações adicionais da mensagem
         isForwarded: msg.isForwarded,
         forwardingScore: msg.forwardingScore || 0,
@@ -162,10 +162,10 @@ class WhatsAppService {
         broadcast: msg.broadcast,
         fromMe: msg.fromMe,
         deviceType: msg.deviceType,
-        
+
         // Informações de localização (se aplicável)
         location: null,
-        
+
         // Informações de citação (se aplicável)
         hasQuotedMsg: msg.hasQuotedMsg,
         quotedMsg: null
@@ -215,12 +215,12 @@ class WhatsAppService {
       // Adicionar à lista de mensagens do cliente
       const clientMessages = this.receivedMessages.get(clientId) || [];
       clientMessages.push(messageData);
-      
+
       // Manter apenas as últimas 1000 mensagens por cliente para evitar uso excessivo de memória
       if (clientMessages.length > 1000) {
         clientMessages.shift();
       }
-      
+
       this.receivedMessages.set(clientId, clientMessages);
 
       // Emitir nova mensagem via WebSocket
@@ -229,10 +229,10 @@ class WhatsAppService {
 
     this.clients.set(clientId, client);
     this.clientStatus.set(clientId, 'initializing');
-    
+
     // Emitir mudança de status via WebSocket
     this.getWebSocketService().emitStatusChange(clientId, 'initializing');
-    
+
     await client.initialize();
     return { success: true, message: `Cliente ${clientId} criado` };
   }
@@ -257,6 +257,162 @@ class WhatsAppService {
     return { success: true, to: chatId, message, timestamp: new Date() };
   }
 
+  // Métodos para interação com grupos
+  async getGroups(clientId) {
+    const client = this.clients.get(clientId);
+    if (!client) throw new Error(`Cliente ${clientId} não encontrado`);
+
+    const chats = await client.getChats();
+    const groups = chats.filter(chat => chat.isGroup).map(group => ({
+      id: group.id._serialized,
+      name: group.name,
+      participantsCount: group.participants ? group.participants.length : 0,
+      description: group.description || null,
+      createdAt: group.createdAt ? new Date(group.createdAt * 1000) : null,
+      isReadOnly: group.isReadOnly || false,
+      isMuted: group.isMuted || false,
+      unreadCount: group.unreadCount || 0,
+      lastMessage: group.lastMessage ? {
+        body: group.lastMessage.body,
+        timestamp: new Date(group.lastMessage.timestamp * 1000),
+        from: group.lastMessage.from
+      } : null
+    }));
+
+    return groups;
+  }
+
+  async findGroupByName(clientId, groupName) {
+    const groups = await this.getGroups(clientId);
+    const foundGroups = groups.filter(group =>
+      group.name.toLowerCase().includes(groupName.toLowerCase())
+    );
+
+    if (foundGroups.length === 0) {
+      throw new Error(`Nenhum grupo encontrado com o nome: ${groupName}`);
+    }
+
+    if (foundGroups.length > 1) {
+      const exactMatch = foundGroups.find(group =>
+        group.name.toLowerCase() === groupName.toLowerCase()
+      );
+      if (exactMatch) {
+        return exactMatch;
+      }
+
+      throw new Error(`Múltiplos grupos encontrados com o nome "${groupName}". Grupos encontrados: ${foundGroups.map(g => g.name).join(', ')}`);
+    }
+
+    return foundGroups[0];
+  }
+
+  async sendMessageToGroup(clientId, groupName, message) {
+    const client = this.clients.get(clientId);
+    if (!client) throw new Error(`Cliente ${clientId} não encontrado`);
+
+    const group = await this.findGroupByName(clientId, groupName);
+    await client.sendMessage(group.id, message);
+
+    return {
+      success: true,
+      groupId: group.id,
+      groupName: group.name,
+      message,
+      timestamp: new Date()
+    };
+  }
+
+  async getGroupMessages(clientId, groupName, options = {}) {
+    if (!this.clients.has(clientId)) {
+      throw new Error(`Cliente ${clientId} não encontrado`);
+    }
+
+    const group = await this.findGroupByName(clientId, groupName);
+    const messages = this.receivedMessages.get(clientId) || [];
+
+    // Filtrar mensagens apenas do grupo específico
+    let filteredMessages = messages.filter(msg =>
+      msg.isGroup && msg.from === group.id
+    );
+
+    // Aplicar filtros adicionais
+    if (options.from) {
+      filteredMessages = filteredMessages.filter(msg =>
+        msg.contact && msg.contact.name &&
+        msg.contact.name.toLowerCase().includes(options.from.toLowerCase())
+      );
+    }
+
+    if (options.lastHours) {
+      const hoursAgo = new Date(Date.now() - (options.lastHours * 60 * 60 * 1000));
+      filteredMessages = filteredMessages.filter(msg =>
+        new Date(msg.timestamp) >= hoursAgo
+      );
+    }
+
+    if (options.type) {
+      filteredMessages = filteredMessages.filter(msg => msg.type === options.type);
+    }
+
+    // Ordenar por timestamp (mais recente primeiro)
+    filteredMessages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    // Aplicar limite
+    if (options.limit) {
+      filteredMessages = filteredMessages.slice(0, options.limit);
+    }
+
+    return {
+      groupId: group.id,
+      groupName: group.name,
+      messages: filteredMessages,
+      total: filteredMessages.length
+    };
+  }
+
+  async getGroupInfo(clientId, groupName) {
+    const client = this.clients.get(clientId);
+    if (!client) throw new Error(`Cliente ${clientId} não encontrado`);
+
+    const group = await this.findGroupByName(clientId, groupName);
+    const chat = await client.getChatById(group.id);
+
+    const participants = chat.participants ? await Promise.all(
+      chat.participants.map(async (participant) => {
+        try {
+          const contact = await client.getContactById(participant.id._serialized);
+          return {
+            id: participant.id._serialized,
+            name: contact.name || contact.pushname || 'Sem nome',
+            number: contact.number,
+            isAdmin: participant.isAdmin || false,
+            isSuperAdmin: participant.isSuperAdmin || false
+          };
+        } catch (error) {
+          return {
+            id: participant.id._serialized,
+            name: 'Erro ao obter nome',
+            number: participant.id._serialized.replace('@c.us', ''),
+            isAdmin: participant.isAdmin || false,
+            isSuperAdmin: participant.isSuperAdmin || false
+          };
+        }
+      })
+    ) : [];
+
+    return {
+      id: group.id,
+      name: group.name,
+      description: chat.description || null,
+      participantsCount: participants.length,
+      participants: participants,
+      createdAt: chat.createdAt ? new Date(chat.createdAt * 1000) : null,
+      isReadOnly: chat.isReadOnly || false,
+      isMuted: chat.isMuted || false,
+      unreadCount: chat.unreadCount || 0
+    };
+  }
+
   // Métodos para gerenciar mensagens recebidas (mantidos iguais)
   getMessages(clientId, options = {}) {
     if (!this.clients.has(clientId)) {
@@ -268,17 +424,18 @@ class WhatsAppService {
 
     // Filtrar por remetente
     if (options.from) {
-      filteredMessages = filteredMessages.filter(msg => 
-        msg.from.includes(options.from) || 
-        msg.contact.name.toLowerCase().includes(options.from.toLowerCase()) ||
-        msg.contact.number.includes(options.from)
+      filteredMessages = filteredMessages.filter(msg =>
+        msg.contact && msg.contact.name &&
+        msg.contact.name.toLowerCase().includes(options.from.toLowerCase())
       );
     }
 
-    // Filtrar por data (últimas X horas)
+    // Filtrar por últimas horas
     if (options.lastHours) {
-      const cutoffTime = new Date(Date.now() - (options.lastHours * 60 * 60 * 1000));
-      filteredMessages = filteredMessages.filter(msg => msg.timestamp >= cutoffTime);
+      const hoursAgo = new Date(Date.now() - (options.lastHours * 60 * 60 * 1000));
+      filteredMessages = filteredMessages.filter(msg =>
+        new Date(msg.timestamp) >= hoursAgo
+      );
     }
 
     // Filtrar por tipo de mensagem
@@ -286,25 +443,25 @@ class WhatsAppService {
       filteredMessages = filteredMessages.filter(msg => msg.type === options.type);
     }
 
-    // Filtrar apenas grupos ou apenas contatos individuais
-    if (options.onlyGroups === true) {
-      filteredMessages = filteredMessages.filter(msg => msg.isGroup);
-    } else if (options.onlyGroups === false) {
-      filteredMessages = filteredMessages.filter(msg => !msg.isGroup);
+    // Filtrar apenas grupos ou apenas individuais
+    if (options.onlyGroups !== undefined) {
+      filteredMessages = filteredMessages.filter(msg =>
+        options.onlyGroups ? msg.isGroup : !msg.isGroup
+      );
     }
 
-    // Ordenar por timestamp (mais recentes primeiro)
-    filteredMessages.sort((a, b) => b.timestamp - a.timestamp);
+    // Ordenar por timestamp (mais recente primeiro)
+    filteredMessages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-    // Limitar quantidade
-    const limit = options.limit || 50;
-    filteredMessages = filteredMessages.slice(0, limit);
+    // Aplicar limite
+    if (options.limit) {
+      filteredMessages = filteredMessages.slice(0, options.limit);
+    }
 
     return {
-      clientId,
-      total: messages.length,
-      filtered: filteredMessages.length,
-      messages: filteredMessages
+      messages: filteredMessages,
+      total: filteredMessages.length,
+      filters: options
     };
   }
 
@@ -315,24 +472,30 @@ class WhatsAppService {
 
     const messages = this.receivedMessages.get(clientId) || [];
     const now = new Date();
-    const last24h = messages.filter(msg => (now - msg.timestamp) <= 24 * 60 * 60 * 1000);
-    const lastHour = messages.filter(msg => (now - msg.timestamp) <= 60 * 60 * 1000);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const thisWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    const groupMessages = messages.filter(msg => msg.isGroup);
-    const individualMessages = messages.filter(msg => !msg.isGroup);
-    const mediaMessages = messages.filter(msg => msg.hasMedia);
-
-    return {
-      clientId,
+    const stats = {
       total: messages.length,
-      last24Hours: last24h.length,
-      lastHour: lastHour.length,
-      groups: groupMessages.length,
-      individual: individualMessages.length,
-      withMedia: mediaMessages.length,
-      oldestMessage: messages.length > 0 ? messages[0].timestamp : null,
-      newestMessage: messages.length > 0 ? messages[messages.length - 1].timestamp : null
+      today: messages.filter(msg => new Date(msg.timestamp) >= today).length,
+      yesterday: messages.filter(msg => {
+        const msgDate = new Date(msg.timestamp);
+        return msgDate >= yesterday && msgDate < today;
+      }).length,
+      thisWeek: messages.filter(msg => new Date(msg.timestamp) >= thisWeek).length,
+      byType: {},
+      groups: messages.filter(msg => msg.isGroup).length,
+      individual: messages.filter(msg => !msg.isGroup).length,
+      withMedia: messages.filter(msg => msg.hasMedia).length
     };
+
+    // Contar por tipo
+    messages.forEach(msg => {
+      stats.byType[msg.type] = (stats.byType[msg.type] || 0) + 1;
+    });
+
+    return stats;
   }
 
   clearMessages(clientId) {
@@ -342,48 +505,32 @@ class WhatsAppService {
 
     const messageCount = this.receivedMessages.get(clientId)?.length || 0;
     this.receivedMessages.set(clientId, []);
-    
+
     return {
       success: true,
-      message: `${messageCount} mensagens removidas do cliente ${clientId}`
+      clearedMessages: messageCount,
+      timestamp: new Date()
     };
   }
 
-  async removeClient(clientId) {
-    const client = this.clients.get(clientId);
-    if (!client) throw new Error(`Cliente ${clientId} não encontrado`);
-    
-    await client.destroy();
-    this.clients.delete(clientId);
-    this.clientStatus.delete(clientId);
-    this.qrCodes.delete(clientId);
-    this.receivedMessages.delete(clientId); // Limpar mensagens do cliente removido
-    
-    return { success: true, message: `Cliente ${clientId} removido` };
-  }
-
-  listClients() {
-    return Array.from(this.clients.keys()).map(id => ({
-      clientId: id,
-      status: this.clientStatus.get(id) || 'unknown',
-      hasQR: this.qrCodes.has(id),
-      messageCount: this.receivedMessages.get(id)?.length || 0
-    }));
-  }
-
   async destroyAllClients() {
+    console.log('🔄 Encerrando todos os clientes WhatsApp...');
+
     for (const [clientId, client] of this.clients) {
       try {
         await client.destroy();
-        console.log(`Cliente ${clientId} encerrado`);
+        console.log(`✅ Cliente ${clientId} encerrado`);
       } catch (error) {
-        console.error(`Erro ao encerrar cliente ${clientId}:`, error);
+        console.error(`❌ Erro ao encerrar cliente ${clientId}:`, error.message);
       }
     }
+
     this.clients.clear();
     this.clientStatus.clear();
     this.qrCodes.clear();
     this.receivedMessages.clear();
+
+    console.log('✅ Todos os clientes foram encerrados');
   }
 }
 

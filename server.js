@@ -52,7 +52,14 @@ app.get('/', (req, res) => {
       'GET /client/:clientId/messages/latest?token=SEU_TOKEN': 'Últimas mensagens',
       'GET /client/:clientId/messages/search?token=SEU_TOKEN': 'Buscar mensagens',
       'GET /client/:clientId/messages/stats?token=SEU_TOKEN': 'Estatísticas de mensagens',
-      'DELETE /client/:clientId/messages?token=SEU_TOKEN': 'Limpar mensagens'
+      'DELETE /client/:clientId/messages?token=SEU_TOKEN': 'Limpar mensagens',
+
+      // Endpoints de grupos
+      'GET /client/:clientId/groups?token=SEU_TOKEN': 'Listar grupos disponíveis',
+      'GET /client/:clientId/groups/:groupName?token=SEU_TOKEN': 'Buscar grupo por nome',
+      'GET /client/:clientId/groups/:groupName/info?token=SEU_TOKEN': 'Informações detalhadas do grupo',
+      'GET /client/:clientId/groups/:groupName/messages?token=SEU_TOKEN': 'Mensagens do grupo',
+      'POST /client/:clientId/groups/send?token=SEU_TOKEN': 'Enviar mensagem para grupo'
     },
     websocket_events: {
       'authenticate': 'Autenticar com token',
@@ -88,6 +95,13 @@ app.get('/client/:clientId/messages/latest', authMiddleware, whatsappController.
 app.get('/client/:clientId/messages/search', authMiddleware, whatsappController.searchMessages);
 app.get('/client/:clientId/messages/stats', authMiddleware, whatsappController.getMessageStats);
 app.delete('/client/:clientId/messages', authMiddleware, whatsappController.clearMessages);
+
+// Rotas para interação com grupos
+app.get('/client/:clientId/groups', authMiddleware, whatsappController.getGroups);
+app.get('/client/:clientId/groups/:groupName', authMiddleware, whatsappController.findGroupByName);
+app.get('/client/:clientId/groups/:groupName/info', authMiddleware, whatsappController.getGroupInfo);
+app.get('/client/:clientId/groups/:groupName/messages', authMiddleware, whatsappController.getGroupMessages);
+app.post('/client/:clientId/groups/send', authMiddleware, whatsappController.sendMessageToGroup);
 
 // Nova rota para estatísticas do WebSocket
 app.get('/websocket/stats', authMiddleware, (req, res) => {
