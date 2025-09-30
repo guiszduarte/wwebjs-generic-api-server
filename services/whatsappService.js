@@ -57,7 +57,7 @@ class WhatsAppService {
           "Authorization": `Bearer ${process.env.WEBHOOK_TOKEN}`
         },
       });
-      console.log("Webhook enviado:", response.status);
+      console.log("Webhook enviado:", response.status, " body: ", response.data);
     } catch (error) {
       console.error("Erro ao enviar webhook:", error.message);
     }
