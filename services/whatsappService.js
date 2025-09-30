@@ -54,6 +54,7 @@ class WhatsAppService {
       const response = await axios.post(webhookUrl, payload, {
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.WEBHOOK_TOKEN}`
         },
       });
       console.log("Webhook enviado:", response.status);
